@@ -67,15 +67,57 @@ def parse_option_info(lvc, lva):
         return opt_type, first_part, strike, maturity
     return opt_type, "", 0, ""
 
+def jalali_to_gregorian(jy, jm, jd):
+    """Convert a Jalali date to Gregorian without relying on a third-party package."""
+    if jm < 1 or jm > 12 or jd < 1 or jd > 31:
+        raise ValueError("Invalid Jalali date")
+
+    jy += 1595
+    days = -355668 + 365 * jy + (jy // 33) * 8 + ((jy % 33 + 3) // 4) + jd
+    if jm < 7:
+        days += (jm - 1) * 31
+    else:
+        days += (jm - 7) * 30 + 186
+
+    gy = 400 * (days // 146097)
+    days %= 146097
+    if days > 36524:
+        gy += 100 * ((days - 1) // 36524)
+        days = (days - 1) % 36524
+        if days >= 365:
+            days += 1
+    gy += 4 * (days // 1461)
+    days %= 1461
+    if days > 365:
+        gy += (days - 1) // 365
+        days = (days - 1) % 365
+
+    gd = days + 1
+    month_lengths = [0, 31, 29 if (gy % 4 == 0 and (gy % 100 != 0 or gy % 400 == 0)) else 28,
+                     31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    gm = 1
+    while gm <= 12 and gd > month_lengths[gm]:
+        gd -= month_lengths[gm]
+        gm += 1
+    if gm > 12:
+        raise ValueError("Jalali date is out of supported range")
+    return datetime.date(gy, gm, gd)
+
+
 def get_days_left(maturity_str):
     try:
-        parts = maturity_str.split('/')
-        if len(parts) == 3:
-            jy, jm, jd = int(parts[0]), int(parts[1]), int(parts[2])
-            diff = (jy - 1403) * 365 + (jm - 8) * 30 + (jd - 20)
-            return max(diff, 1)
-    except Exception: pass
-    return 30
+        jy, jm, jd = [int(part.strip()) for part in maturity_str.split('/')]
+        if jm < 1 or jm > 12 or jd < 1 or jd > (31 if jm <= 6 else 30):
+            return None
+        expiry_date = jalali_to_gregorian(jy, jm, jd)
+        # Tehran local date (UTC+03:30); avoids using the computer's local timezone.
+        tehran_today = (
+            datetime.datetime.now(datetime.timezone.utc)
+            + datetime.timedelta(hours=3, minutes=30)
+        ).date()
+        return (expiry_date - tehran_today).days
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 # --- ۲. ماژول Live Data Engine ---
 @st.cache_data(ttl=4)
@@ -138,6 +180,9 @@ def process_data(raw_options, stock_prices):
         open_interest = int(item.get('buyOP', 0) or 0)
         
         days_left = get_days_left(maturity)
+        # Invalid or expired contracts must not receive fabricated Greeks.
+        if days_left is None or days_left <= 0:
+            continue
         delta, iv = calculate_delta_and_iv(underlying_p, strike, days_left, entry_price, is_call=(opt_type == "خرید"))
         
         # --- ماتریس تحلیل کیفی سیستم (بر اساس پیشنهادات ارشد) ---
