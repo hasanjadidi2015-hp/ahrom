@@ -2,3 +2,7 @@ history_data/
 __pycache__/
 .streamlit/
 *.json
+*.db
+*.db-wal
+*.db-shm
+logs/

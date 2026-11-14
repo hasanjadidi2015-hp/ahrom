@@ -6,6 +6,7 @@ NAMES = ['اهرم', 'خودرو', 'شستا', 'فملی', 'وبملت', 'شپن
 OPTION_CODE = 'ضهرم8024'
 ROUNDS = 200
 WAIT_SEC = 30
+STALE_TEXT = 'داده قرارداد ایستا است (احتمالاً قدیمی)'
 cfg = e.ScalpConfig()
 
 try:
@@ -23,12 +24,15 @@ try:
             for st in stocks:
                 name = e.normalize_text(st.get('lva'))
                 if name in NAMES:
-                    parts.append(f"{name} {st.get('pmd')}/{st.get('pmo')} z{st.get('zTotTran')} h{st.get('hEven')}")
+                    parts.append(f"{name} {st.get('pmd')}/{st.get('pmo')} h{st.get('hEven')}")
+
             opt = next((r for r in options if e.normalize_text(r.get('lva')) == OPTION_CODE), None)
             if opt is not None:
                 lvl = e._best_level(opt.get('blDs')) or {}
-                parts.append(f"{OPTION_CODE} {lvl.get('pmd')}/{lvl.get('pmo')} z{opt.get('zTotTran')} h{opt.get('hEven')}")
-            print(now, snap['status'], '| ایستا:', snap['stale_underlyings'], '|', ' | '.join(parts))
+                parts.append(f"{OPTION_CODE} {lvl.get('pmd')}/{lvl.get('pmo')} h{opt.get('hEven')}")
+
+            opt_stale = sum(1 for c in snap['contracts'] if STALE_TEXT in c['reasons'])
+            print(now, snap['status'], '| قرارداد ایستا:', opt_stale, '|', ' | '.join(parts))
         time.sleep(WAIT_SEC)
     print('پایان تست')
 except KeyboardInterrupt:
